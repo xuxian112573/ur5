@@ -1,0 +1,189 @@
+// ROS
+#include <ros/ros.h>
+#include <geometry_msgs/PoseArray.h>
+#include <actionlib/server/simple_action_server.h>
+
+// Grasp generation
+#include <moveit_simple_grasps/simple_grasps.h>
+#include <moveit_simple_grasps/GenerateGraspsAction.h>
+#include <moveit_simple_grasps/GraspGeneratorOptions.h>
+
+
+// Baxter specific properties
+#include <moveit_simple_grasps/grasp_data.h>
+#include <moveit_simple_grasps/custom_environment2.h>
+
+namespace moveit_simple_grasps
+{
+
+  bool graspGeneratorOptions2Inner(
+          const moveit_simple_grasps::GraspGeneratorOptions &options,
+          grasp_axis_t &axis,
+          grasp_direction_t &direction,
+          grasp_rotation_t &rotation)
+  {
+    switch(options.grasp_axis)
+    {
+     case GraspGeneratorOptions::GRASP_AXIS_X:
+        axis = X_AXIS;
+        break;
+     case GraspGeneratorOptions::GRASP_AXIS_Y:
+        axis = Y_AXIS;
+        break;
+     case GraspGeneratorOptions::GRASP_AXIS_Z:
+        axis = Z_AXIS;
+        break;
+     default:
+        assert(false);
+        break;
+    }
+
+    switch(options.grasp_direction)
+    {
+     case GraspGeneratorOptions::GRASP_DIRECTION_UP:
+        direction = UP;
+        break;
+     case GraspGeneratorOptions::GRASP_DIRECTION_DOWN:
+        direction = DOWN;
+        break;
+     default:
+        assert(false);
+        break;
+    }
+
+    switch(options.grasp_rotation)
+    {
+     case GraspGeneratorOptions::GRASP_ROTATION_FULL:
+        rotation = FULL;
+        break;
+     case GraspGeneratorOptions::GRASP_ROTATION_HALF:
+        rotation = HALF;
+        break;
+     default:
+        assert(false);
+        break;
+    }
+    return true;
+  }
+
+  class GraspGeneratorServer
+  {
+  private:
+    // 共享节点句柄
+    ros::NodeHandle nh_;
+
+    // Action server
+    actionlib::SimpleActionServer<moveit_simple_grasps::GenerateGraspsAction> as_;
+    moveit_simple_grasps::GenerateGraspsResult result_;
+
+    // Grasp generator
+    moveit_simple_grasps::SimpleGraspsPtr simple_grasps_;
+
+    // class for publishing stuff to rviz用于将内容发布到rviz的类
+    moveit_visual_tools::MoveItVisualToolsPtr visual_tools_;
+
+    // robot-specific data for generating grasps特定于机器人的数据以生成抓取
+    moveit_simple_grasps::GraspData grasp_data_;
+
+    // 我们在用哪条手臂
+    std::string side_;
+    std::string planning_group_name_;
+
+  public:
+
+    // Constructor
+    GraspGeneratorServer(const std::string &name, const std::string &side)
+      : nh_("~")
+      , as_(nh_, name, boost::bind(&moveit_simple_grasps::GraspGeneratorServer::executeCB, this, _1), false)
+      , side_(side)
+      //, planning_group_name_(side_+"_arm")
+      , planning_group_name_("_arm")
+    {
+      // ---------------------------------------------------------------------------------------------
+      // Load grasp data specific to our robot加载特定于我们机器人的抓取数据
+        /**
+   * \brief 从Yaml文件加载抓取数据（从roslaunch加载）
+   * \param node handle - 允许命名空间
+   * \param end effector name - 双手机器人的哪一侧要加载数据。 应与SRDF EE名称相对应
+   * \return true on success
+   */
+      if (!grasp_data_.loadRobotGraspData(nh_, side_))
+        ros::shutdown();
+
+      // ---------------------------------------------------------------------------------------------
+      // Load the Robot Viz Tools for publishing to Rviz  加载Robot Viz工具以发布到Rviz
+      visual_tools_.reset(new moveit_visual_tools::MoveItVisualTools(grasp_data_.base_link_));
+      visual_tools_->setLifetime(120.0);
+      const robot_model::JointModelGroup* ee_jmg = visual_tools_->getRobotModel()->getJointModelGroup(grasp_data_.ee_group_);
+      visual_tools_->loadEEMarker(ee_jmg);
+
+      // ---------------------------------------------------------------------------------------------
+      // Load grasp generator
+      simple_grasps_.reset( new moveit_simple_grasps::SimpleGrasps(visual_tools_) );
+      as_.start();
+    }
+
+    void executeCB(const moveit_simple_grasps::GenerateGraspsGoalConstPtr &goal)
+    {
+      // ---------------------------------------------------------------------------------------------
+      // 删除以前的结果
+      result_.grasps.clear();
+
+      // ---------------------------------------------------------------------------------------------
+      // Set object width and generate grasps设置对象宽度并生成抓取
+      grasp_data_.object_size_ = goal->width;
+
+      // Generate grasps for all options that were passed为所有已通过的选项生成抓握
+      grasp_axis_t axis;
+      grasp_direction_t direction;
+      grasp_rotation_t rotation;
+      for(size_t i=0; i<goal->options.size(); ++i)
+      {
+        graspGeneratorOptions2Inner(goal->options[i], axis, direction, rotation);
+         /**
+   * \brief 围绕一个姿势在一个轴上创建抓取位置
+   *        Note: to visualize these grasps use moveit_visual_tools.publishAnimatedGrasps() function or
+   *        moveit_visual_tools.publishIKSolutions() with the resulting data
+   * \param pose - 被抓物体的中心点
+   * \param axis - axis relative to object pose to rotate generated grasps around相对于对象姿态的轴旋转生成的抓取
+   * \param direction - 平行抓取器通常是对称的，因此可以在180度左右执行相同的抓取。 此选项允许生成翻转的抓握姿势
+   * \param rotation - amount to rotate around the object - 180 or 360 degrees围绕物体旋转的量-180或360度
+   * \param hand_roll - 握住时相对于对象中心点滚动腕部的弧度（弧度）。 默认使用0
+   * \param grasp_data - 特定于机器人几何形状的参数
+   * \param possible_grasps - 尝试掌握的输出解向量。 好的，如果预先填充
+   * \return true if successful
+   */
+        simple_grasps_->generateAxisGrasps(goal->pose, axis, direction, rotation, 0, grasp_data_, result_.grasps);
+      }
+      // fallback behaviour, generate default grasps when no options were passed后备行为，当未传递任何选项时生成默认值
+      if(goal->options.empty())
+      {
+        simple_grasps_->generateBlockGrasps(goal->pose, grasp_data_, result_.grasps);
+        /**
+   * \brief 为块创建所有可能的抓取位置
+   * \param pose of block, where vector arrow is parallel to table plane块的姿势，矢量箭头与工作台平面平行
+   * \param data 描述末端执行器
+   * \param resulting generated possible grasps
+   * \return true if successful
+   bool SimpleGrasps::generateBlockGrasps(const geometry_msgs::Pose& object_pose, const GraspData& grasp_data,
+  std::vector<moveit_msgs::Grasp>& possible_grasps)
+   */ 
+      }
+
+      // ---------------------------------------------------------------------------------------------
+      // Publish results
+      as_.setSucceeded(result_);
+    }
+
+  };
+}
+
+
+int main(int argc, char *argv[])
+{
+  ros::init(argc, argv, "grasp_generator_server");
+  //moveit_simple_grasps::GraspGeneratorServer grasp_generator_server("generate", "right");
+  moveit_simple_grasps::GraspGeneratorServer grasp_generator_server("generate", "gripper");
+  ros::spin();
+  return 0;
+}

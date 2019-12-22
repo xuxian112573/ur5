@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.5.1-0-g916b5db  Build Version: 1.5.7152.31018
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="ban">
+  <link
+    name="zhuozi">
+    <inertial>
+      <origin
+        xyz="7.4003E-18 0.00091818 -0.020647"
+        rpy="0 0 0" />
+      <mass
+        value="9" />
+      <inertia
+        ixx="0.63116"
+        ixy="1.004E-17"
+        ixz="-3.3005E-18"
+        iyy="0.63172"
+        iyz="0.0012067"
+        izz="0.8185" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://zhuozi/meshes/zhuozi.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.78824 1 0.57255 1" />
+        <texture
+          filename="package://zhuozi/textures/" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://zhuozi/meshes/zhuozi.STL" />
+      </geometry>
+    </collision>
+  </link>
+</robot>

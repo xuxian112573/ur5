@@ -1,0 +1,39 @@
+<robot name="ban">
+  <link name="ban">
+
+    <!-- rosrun gazebo_ros spawn_model -file $(rospack find ur5_single_arm_tufts)/urdf/objects/table.urdf -urdf -x 0.5 -y -0 -z 0.75 -model table -->
+    
+    <inertial>
+      <origin xyz="0 0 0.77" rpy="0 0 1.5707" />
+      <mass value="1"/>
+      <inertia
+        ixx="0.166667" ixy="0.0" ixz="0.0"
+        iyy="0.166667" iyz="0.0"
+        izz="0.166667"/>
+    </inertial>
+
+    <visual>
+      <geometry>
+         <mesh filename="package://ur5_single_arm_tufts/urdf/objects/dropbox/meshes/ban.STL" />
+      </geometry>
+    </visual>
+
+    <collision>
+      <geometry>
+        <mesh filename="package://ur5_single_arm_tufts/urdf/objects/dropbox/meshes/ban.STL" />
+      </geometry>
+    </collision>
+
+  </link>
+
+  <gazebo reference="ban">
+    <material>Gazebo/Green</material>
+  </gazebo> 
+  
+
+  <gazebo>
+    <static>true</static>
+  </gazebo>
+  
+
+</robot>
